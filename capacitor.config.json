@@ -1,0 +1,21 @@
+{
+  "appId": "com.reader.tablet",
+  "appName": "Reader",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false,
+    "backgroundColor": "#f5f0e8"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "backgroundColor": "#f5f0e8",
+      "showSpinner": false
+    }
+  }
+}
