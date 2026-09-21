@@ -1,148 +1,590 @@
 <!DOCTYPE html>
-<html lang="pt" class="">
+<html lang="pt">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, 
-        maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#1a1a1a">
-  <title>Reader</title>
-  <link rel="stylesheet" href="lib/tailwind.min.css">
-  <link rel="stylesheet" href="css/app.css">
-  <script src="lib/epub.min.js"></script>
-  <script src="lib/pdf.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Reader</title>
+
+<!-- Tailwind via CDN (para testes no GitHub Pages) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { darkMode: 'class' };
+</script>
+
+<!-- epub.js e PDF.js via CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/epubjs/0.3.93/epub.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  // Worker do PDF.js
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+</script>
+
+<style>
+  html, body { height: 100%; overscroll-behavior: none; }
+  body { -webkit-tap-highlight-color: transparent; }
+  #epub-viewer iframe { border: none; }
+</style>
 </head>
-<body class="bg-[#f5f0e8] dark:bg-[#1a1a1a] text-[#2d2d2d] 
-             dark:text-[#b0b0b0] select-none overflow-hidden">
 
-  <!-- ═══════════════ BIBLIOTECA (Ecrã inicial) ═══════════════ -->
-  <div id="library-screen" class="fixed inset-0 flex flex-col z-10">
-    <!-- Barra superior -->
-    <header class="flex items-center justify-between px-6 py-4 
-                   border-b border-[#e0d8c8] dark:border-[#333]">
-      <h1 class="text-xl font-semibold tracking-wide">A minha biblioteca</h1>
-      <div class="flex gap-3">
-        <button id="btn-night-toggle" class="p-2 rounded-lg 
-                hover:bg-[#e8e0d0] dark:hover:bg-[#333] transition"
-                aria-label="Modo noturno">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" 
-               stroke-width="2" viewBox="0 0 24 24">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-          </svg>
-        </button>
-        <button id="btn-sync" class="p-2 rounded-lg 
-                hover:bg-[#e8e0d0] dark:hover:bg-[#333] transition"
-                aria-label="Sincronizar">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" 
-               stroke-width="2" viewBox="0 0 24 24">
-            <path d="M23 4v6h-6M1 20v-6h6"/>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-          </svg>
-        </button>
-        <button id="btn-import" class="p-2 rounded-lg 
-                hover:bg-[#e8e0d0] dark:hover:bg-[#333] transition"
-                aria-label="Importar livro">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" 
-               stroke-width="2" viewBox="0 0 24 24">
-            <path d="M12 5v14M5 12h14"/>
-          </svg>
-        </button>
-      </div>
-    </header>
+<body class="bg-[#f5f0e8] dark:bg-[#1a1a1a] text-[#2d2d2d] dark:text-[#b0b0b0] select-none overflow-hidden">
 
-    <!-- Grelha de livros -->
-    <main class="flex-1 overflow-y-auto p-6">
-      <div id="book-grid" 
-           class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
-        <!-- Preenchido dinamicamente por app.js -->
-      </div>
-      <p id="empty-library" class="hidden text-center mt-20 opacity-50 text-lg">
-        Nenhum livro encontrado.<br>
-        <span class="text-sm">Toca em + para importar do pendrive.</span>
-      </p>
-    </main>
-
-    <!-- Barra inferior minimalista -->
-    <footer class="flex justify-center gap-8 py-3 
-                   border-t border-[#e0d8c8] dark:border-[#333] text-xs opacity-60">
-      <span id="storage-indicator">Armazenamento: —</span>
-      <span id="wifi-indicator">Wi-Fi: —</span>
-    </footer>
-  </div>
-
-  <!-- ═══════════════ LEITOR (Ecrã de leitura) ═══════════════ -->
-  <div id="reader-screen" class="fixed inset-0 hidden flex-col z-20">
-    <!-- Barra de estado do leitor (oculta até tocar) -->
-    <div id="reader-toolbar" 
-         class="absolute top-0 left-0 right-0 flex items-center justify-between 
-                px-4 py-3 bg-[#f5f0e8]/95 dark:bg-[#1a1a1a]/95 
-                backdrop-blur border-b border-[#e0d8c8] dark:border-[#333] 
-                z-30 transition-opacity duration-300 opacity-0">
-      <button id="btn-back" class="p-2 rounded-lg hover:bg-[#e8e0d0] 
-              dark:hover:bg-[#333]">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" 
-             stroke-width="2" viewBox="0 0 24 24">
-          <path d="M19 12H5M12 19l-7-7 7-7"/>
-        </svg>
-      </button>
-      <span id="book-title" class="text-sm truncate max-w-[60%] opacity-70"></span>
-      <div class="flex gap-2">
-        <button id="btn-font-decrease" class="p-2 rounded-lg 
-                hover:bg-[#e8e0d0] dark:hover:bg-[#333] text-xs font-bold">A-</button>
-        <button id="btn-font-increase" class="p-2 rounded-lg 
-                hover:bg-[#e8e0d0] dark:hover:bg-[#333] text-xs font-bold">A+</button>
-        <button id="btn-annotations" class="p-2 rounded-lg 
-                hover:bg-[#e8e0d0] dark:hover:bg-[#333]">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" 
-               stroke-width="2" viewBox="0 0 24 24">
-            <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
-          </svg>
-        </button>
-      </div>
+<!-- ═════════════ BIBLIOTECA ═════════════ -->
+<div id="library-screen" class="fixed inset-0 flex flex-col z-10">
+  <header class="flex items-center justify-between px-6 py-4 border-b border-[#e0d8c8] dark:border-[#333]">
+    <h1 class="text-xl font-semibold tracking-wide">A minha biblioteca</h1>
+    <div class="flex gap-2">
+      <button id="btn-night-toggle" class="p-2 rounded-lg hover:bg-[#e8e0d0] dark:hover:bg-[#333] transition" title="Modo noturno">🌙</button>
+      <button id="btn-sync" class="p-2 rounded-lg hover:bg-[#e8e0d0] dark:hover:bg-[#333] transition" title="Sincronizar">☁️</button>
+      <button id="btn-import" class="p-2 rounded-lg hover:bg-[#e8e0d0] dark:hover:bg-[#333] transition" title="Importar">➕</button>
     </div>
+  </header>
 
-    <!-- Área de renderização do livro -->
-    <div id="epub-viewer" class="flex-1 hidden"></div>
-    <canvas id="pdf-viewer" class="flex-1 w-full"></canvas>
+  <main class="flex-1 overflow-y-auto p-6">
+    <div id="book-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5"></div>
+    <p id="empty-library" class="text-center mt-20 opacity-50 text-lg">
+      Nenhum livro encontrado.<br>
+      <span class="text-sm">Toca em ➕ para importar EPUB ou PDF.</span>
+    </p>
+  </main>
 
-    <!-- Rodapé do leitor -->
-    <div id="reader-footer" 
-         class="absolute bottom-0 left-0 right-0 flex justify-between 
-                px-6 py-2 text-xs opacity-40 z-30">
-      <span id="page-progress"></span>
-      <span id="percent-read"></span>
+  <footer class="flex justify-center gap-8 py-3 border-t border-[#e0d8c8] dark:border-[#333] text-xs opacity-60">
+    <span id="storage-indicator">Armazenamento: —</span>
+    <span id="wifi-indicator">Wi-Fi: —</span>
+  </footer>
+</div>
+
+<!-- ═════════════ LEITOR ═════════════ -->
+<div id="reader-screen" class="fixed inset-0 hidden flex-col z-20 bg-[#f5f0e8] dark:bg-[#1a1a1a]">
+  <div id="reader-toolbar"
+       class="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-3
+              bg-[#f5f0e8]/95 dark:bg-[#1a1a1a]/95 backdrop-blur border-b
+              border-[#e0d8c8] dark:border-[#333] z-30 transition-opacity duration-300 opacity-0">
+    <button id="btn-back" class="p-2 rounded-lg hover:bg-[#e8e0d0] dark:hover:bg-[#333]">←</button>
+    <span id="book-title" class="text-sm truncate max-w-[60%] opacity-70"></span>
+    <div class="flex gap-2">
+      <button id="btn-font-decrease" class="p-2 rounded-lg hover:bg-[#e8e0d0] dark:hover:bg-[#333] text-xs font-bold">A-</button>
+      <button id="btn-font-increase" class="p-2 rounded-lg hover:bg-[#e8e0d0] dark:hover:bg-[#333] text-xs font-bold">A+</button>
+      <button id="btn-annotations" class="p-2 rounded-lg hover:bg-[#e8e0d0] dark:hover:bg-[#333]">✏️</button>
     </div>
   </div>
 
-  <!-- ═══════════════ PAINEL DE ANOTAÇÕES ═══════════════ -->
-  <div id="annotations-panel" 
-       class="fixed right-0 top-0 h-full w-80 bg-[#faf7f0] dark:bg-[#222] 
-              shadow-2xl z-40 transform translate-x-full transition-transform 
-              duration-300 overflow-y-auto">
-    <div class="flex items-center justify-between p-4 border-b 
-                border-[#e0d8c8] dark:border-[#333]">
-      <h2 class="font-semibold">Anotações</h2>
-      <button id="btn-close-annotations" class="p-1 rounded hover:bg-[#e8e0d0] 
-              dark:hover:bg-[#333]">✕</button>
-    </div>
-    <div id="annotations-list" class="p-4 space-y-3"></div>
-    <div class="p-4 border-t border-[#e0d8c8] dark:border-[#333]">
-      <button id="btn-export-wifi" class="w-full py-2 rounded-lg 
-              bg-[#2d2d2d] dark:bg-[#b0b0b0] text-[#f5f0e8] dark:text-[#1a1a1a] 
-              text-sm font-medium">
-        Exportar via Wi-Fi
-      </button>
-    </div>
+  <div id="epub-viewer" class="absolute inset-0 hidden"></div>
+  <canvas id="pdf-viewer" class="absolute inset-0 w-full h-full hidden"></canvas>
+
+  <div id="reader-footer" class="absolute bottom-0 left-0 right-0 flex justify-between px-6 py-2 text-xs opacity-40 z-30 pointer-events-none">
+    <span id="page-progress"></span>
+    <span id="percent-read"></span>
   </div>
+</div>
 
-  <!-- Overlay para toque de controlo -->
-  <div id="touch-overlay" class="fixed inset-0 z-15"></div>
+<!-- ═════════════ PAINEL DE ANOTAÇÕES ═════════════ -->
+<div id="annotations-panel"
+     class="fixed right-0 top-0 h-full w-80 max-w-[85vw] bg-[#faf7f0] dark:bg-[#222]
+            shadow-2xl z-40 transform translate-x-full transition-transform duration-300 overflow-y-auto">
+  <div class="flex items-center justify-between p-4 border-b border-[#e0d8c8] dark:border-[#333]">
+    <h2 class="font-semibold">Anotações</h2>
+    <button id="btn-close-annotations" class="p-1 rounded hover:bg-[#e8e0d0] dark:hover:bg-[#333]">✕</button>
+  </div>
+  <div id="annotations-list" class="p-4 space-y-3"></div>
+  <div class="p-4 border-t border-[#e0d8c8] dark:border-[#333]">
+    <button id="btn-export-wifi"
+            class="w-full py-2 rounded-lg bg-[#2d2d2d] dark:bg-[#b0b0b0]
+                   text-[#f5f0e8] dark:text-[#1a1a1a] text-sm font-medium">
+      Exportar via Wi-Fi
+    </button>
+  </div>
+</div>
 
-  <script src="js/storage.js"></script>
-  <script src="js/night-mode.js"></script>
-  <script src="js/annotations.js"></script>
-  <script src="js/epub-reader.js"></script>
-  <script src="js/pdf-reader.js"></script>
-  <script src="js/sync.js"></script>
-  <script src="js/app.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════
+   STORAGE — deteta se está em Capacitor (APK) ou browser
+   ═══════════════════════════════════════════════════════ */
+const hasCapacitor = typeof Capacitor !== 'undefined' && Capacitor.Plugins;
+
+const Storage = {
+  async init() { /* nada a fazer no browser */ },
+
+  async listBooks() {
+    if (hasCapacitor && Capacitor.Plugins.Filesystem) {
+      // implementação APK (guardar para depois)
+      return await this._listCapacitor();
+    }
+    // Fallback browser: ler do IndexedDB (metadados)
+    return await idb.getAll('books');
+  },
+
+  async saveBook(bookId, file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const buffer = await file.arrayBuffer();
+
+    // Detetar título/autor/capa do EPUB
+    let title = file.name.replace(/\.(epub|pdf)$/i, '');
+    let author = '';
+    let cover = null;
+
+    if (ext === 'epub' && typeof ePub !== 'undefined') {
+      try {
+        const book = ePub(buffer);
+        const meta = await book.loaded.metadata;
+        title = meta.title || title;
+        author = meta.creator || '';
+        const coverUrl = await book.coverUrl();
+        if (coverUrl) cover = coverUrl;
+      } catch (e) { console.warn('meta epub:', e); }
+    }
+
+    const record = {
+      id: bookId,
+      title, author, cover,
+      format: ext,
+      data: buffer,   // ArrayBuffer guardado no IndexedDB
+      addedAt: Date.now(),
+    };
+    await idb.put('books', record);
+  },
+
+  async readBook(bookId) {
+    const rec = await idb.get('books', bookId);
+    if (!rec) throw new Error('Livro não encontrado');
+    return rec.data;
+  },
+
+  async getStorageInfo() {
+    try {
+      const est = await navigator.storage.estimate();
+      const used = (est.usage / 1024 / 1024).toFixed(1);
+      return { used: `${used} MB`, total: 'browser' };
+    } catch { return { used: '—', total: '—' }; }
+  },
+};
+
+/* ═══════════════════════════════════════════════════════
+   IndexedDB helper (armazenamento local de ficheiros)
+   ═══════════════════════════════════════════════════════ */
+const idb = {
+  _db: null,
+  async _open() {
+    if (this._db) return this._db;
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('reader_db', 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('books'))
+          db.createObjectStore('books', { keyPath: 'id' });
+      };
+      req.onsuccess = () => { this._db = req.result; resolve(this._db); };
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async put(store, value) {
+    const db = await this._open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(store, 'readwrite');
+      tx.objectStore(store).put(value);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+  async get(store, key) {
+    const db = await this._open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(store, 'readonly');
+      const req = tx.objectStore(store).get(key);
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+  },
+  async getAll(store) {
+    const db = await this._open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(store, 'readonly');
+      const req = tx.objectStore(store).getAll();
+      req.onsuccess = () => res(req.result || []);
+      req.onerror = () => rej(req.error);
+    });
+  },
+  async delete(store, key) {
+    const db = await this._open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(store, 'readwrite');
+      tx.objectStore(store).delete(key);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+};
+
+/* ═══════════════════════════════════════════════════════
+   ESTADO GLOBAL
+   ═══════════════════════════════════════════════════════ */
+const App = {
+  books: [],
+  currentBook: null,
+  currentFormat: null,
+  fontSize: 100,
+  reader: null,
+};
+
+/* ═══════════════════════════════════════════════════════
+   MODO NOTURNO
+   ═══════════════════════════════════════════════════════ */
+const NightMode = {
+  enabled: false,
+  init() {
+    this.enabled = localStorage.getItem('night_mode') === 'true';
+    this.apply(this.enabled);
+  },
+  toggle() {
+    this.enabled = !this.enabled;
+    localStorage.setItem('night_mode', this.enabled);
+    this.apply(this.enabled);
+  },
+  apply(on) {
+    document.documentElement.classList.toggle('dark', on);
+    if (App.reader?.rendition) {
+      App.reader.rendition.themes.select(on ? 'dark' : 'light');
+    }
+  },
+};
+
+/* ═══════════════════════════════════════════════════════
+   LEITOR EPUB
+   ═══════════════════════════════════════════════════════ */
+class EpubReader {
+  constructor({ container, data, fontSize, onProgress }) {
+    this.container = container;
+    this.data = data;
+    this.fontSize = fontSize;
+    this.onProgress = onProgress;
+  }
+  async open(savedCfi) {
+    this.book = ePub(this.data);
+    await this.book.ready;
+    this.rendition = this.book.renderTo(this.container, {
+      width: '100%', height: '100%', spread: 'none', flow: 'paginated',
+    });
+    this.rendition.themes.fontSize(`${this.fontSize}%`);
+    this.rendition.themes.register('dark', {
+      body: { background: '#1a1a1a', color: '#b0b0b0' },
+      a: { color: '#8ab4f8' },
+    });
+    if (NightMode.enabled) this.rendition.themes.select('dark');
+
+    await this.rendition.display(savedCfi || undefined);
+
+    this.book.locations.generate(1000).catch(()=>{});
+    this.rendition.on('relocated', (loc) => {
+      let pct = 0;
+      try { pct = this.book.locations.percentageFromCfi(loc.start.cfi) * 100; } catch {}
+      this.onProgress?.(pct, loc.start.cfi);
+    });
+
+    // Swipe
+    let sx = null;
+    this.container.addEventListener('touchstart', e => sx = e.touches[0].clientX, { passive:true });
+    this.container.addEventListener('touchend', e => {
+      if (sx == null) return;
+      const dx = e.changedTouches[0].clientX - sx; sx = null;
+      if (dx < -60) this.rendition.next();
+      else if (dx > 60) this.rendition.prev();
+    }, { passive:true });
+  }
+  setFontSize(s){ this.fontSize = s; this.rendition?.themes.fontSize(`${s}%`); }
+  destroy(){ this.rendition?.destroy(); this.book?.destroy(); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   LEITOR PDF
+   ═══════════════════════════════════════════════════════ */
+class PdfReader {
+  constructor({ canvas, data, onProgress }) {
+    this.canvas = canvas; this.data = data; this.onProgress = onProgress;
+    this.currentPage = 1;
+  }
+  async open(savedPage) {
+    this.pdfDoc = await pdfjsLib.getDocument({ data: this.data }).promise;
+    this.currentPage = Math.min(savedPage || 1, this.pdfDoc.numPages);
+    await this.renderPage(this.currentPage);
+
+    let sx = null;
+    this.canvas.addEventListener('touchstart', e => sx = e.touches[0].clientX, { passive:true });
+    this.canvas.addEventListener('touchend', e => {
+      if (sx == null) return;
+      const dx = e.changedTouches[0].clientX - sx; sx = null;
+      if (dx < -60) this.nextPage();
+      else if (dx > 60) this.prevPage();
+    }, { passive:true });
+  }
+  async renderPage(n) {
+    const page = await this.pdfDoc.getPage(n);
+    const vp1 = page.getViewport({ scale: 1 });
+    const parent = this.canvas.parentElement;
+    const scale = Math.min(parent.clientWidth / vp1.width, parent.clientHeight / vp1.height) * 0.98;
+    const vp = page.getViewport({ scale });
+    this.canvas.width = vp.width;
+    this.canvas.height = vp.height;
+    const ctx = this.canvas.getContext('2d');
+    ctx.fillStyle = NightMode.enabled ? '#1a1a1a' : '#f5f0e8';
+    ctx.fillRect(0,0,vp.width, vp.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    this.currentPage = n;
+    this.onProgress?.(n, this.pdfDoc.numPages);
+    document.getElementById('page-progress').textContent = `Página ${n} de ${this.pdfDoc.numPages}`;
+    document.getElementById('percent-read').textContent = `${Math.round(n/this.pdfDoc.numPages*100)}%`;
+  }
+  nextPage(){ if (this.currentPage < this.pdfDoc.numPages) this.renderPage(this.currentPage+1); }
+  prevPage(){ if (this.currentPage > 1) this.renderPage(this.currentPage-1); }
+  setFontSize(){}
+  destroy(){ this.pdfDoc?.destroy(); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   ANOTAÇÕES
+   ═══════════════════════════════════════════════════════ */
+const Annotations = {
+  _data: {},
+  init(){ try { this._data = JSON.parse(localStorage.getItem('reader_annotations')||'{}'); } catch{} },
+  get(bookId){ return this._data[bookId] || []; },
+  remove(bookId, id){
+    this._data[bookId] = (this._data[bookId]||[]).filter(a=>a.id!==id);
+    localStorage.setItem('reader_annotations', JSON.stringify(this._data));
+    this.render(bookId);
+  },
+  render(bookId){
+    const list = document.getElementById('annotations-list');
+    const anns = this.get(bookId);
+    if (!anns.length) {
+      list.innerHTML = `<p class="text-sm opacity-40 text-center mt-8">Nenhuma anotação.</p>`;
+      return;
+    }
+    list.innerHTML = anns.map(a => `
+      <div class="p-3 rounded-lg bg-[#efe8da] dark:bg-[#2a2a2a] text-sm">
+        <p class="italic opacity-80 mb-1">"${a.text}"</p>
+        <div class="flex justify-between items-center mt-2">
+          <span class="text-[10px] opacity-40">${new Date(a.createdAt).toLocaleDateString('pt')}</span>
+          <button onclick="Annotations.remove('${bookId}','${a.id}')"
+                  class="text-[10px] opacity-40 hover:opacity-80">apagar</button>
+        </div>
+      </div>`).join('');
+  },
+  exportViaWifi(){
+    const book = App.currentBook;
+    if (!book) return alert('Nenhum livro aberto.');
+    const anns = this.get(book.id);
+    if (!anns.length) return alert('Sem anotações.');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <title>Anotações — ${book.title}</title>
+      <style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;padding:0 20px;background:#f5f0e8;color:#2d2d2d;line-height:1.7}
+      h1{border-bottom:2px solid #d0c8b8;padding-bottom:12px}
+      .meta{opacity:.5;font-size:.8em;margin-bottom:30px}
+      .annotation{margin-bottom:24px;padding:16px;background:#efe8da;border-radius:8px}
+      .quote{font-style:italic;color:#555;border-left:3px solid #b0a890;padding-left:12px}
+      .date{font-size:.7em;opacity:.4;margin-top:8px}</style></head>
+      <body><h1>${book.title}</h1>
+      <p class="meta">${book.author||''} · ${new Date().toLocaleString('pt')}</p>
+      ${anns.map(a=>`<div class="annotation">
+        <div class="quote">"${a.text}"</div>
+        <div class="date">${new Date(a.createdAt).toLocaleString('pt')}</div>
+      </div>`).join('')}</body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `anotacoes_${book.title.replace(/\s+/g,'_')}.html`;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 30000);
+  },
+};
+
+/* ═══════════════════════════════════════════════════════
+   BIBLIOTECA
+   ═══════════════════════════════════════════════════════ */
+async function loadLibrary(){
+  const stored = await Storage.listBooks();
+  const progress = JSON.parse(localStorage.getItem('reader_progress')||'{}');
+  App.books = stored.map(b => ({ ...b, progress: progress[b.id]?.percent || 0 }));
+  renderLibrary();
+  updateStorageIndicator();
+}
+
+function renderLibrary(){
+  const grid = document.getElementById('book-grid');
+  const empty = document.getElementById('empty-library');
+  if (!App.books.length) {
+    grid.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  grid.innerHTML = App.books.map(b => `
+    <div class="book-card cursor-pointer group" data-id="${b.id}">
+      <div class="aspect-[2/3] rounded-lg overflow-hidden shadow-md bg-[#e0d8c8] dark:bg-[#2a2a2a] relative">
+        ${b.cover ? `<img src="${b.cover}" class="w-full h-full object-cover" alt="">`
+                  : `<div class="flex items-center justify-center h-full text-4xl opacity-30">📖</div>`}
+        ${b.progress > 0 ? `<div class="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
+            <div class="h-full bg-[#2d2d2d] dark:bg-[#b0b0b0]" style="width:${b.progress}%"></div>
+          </div>` : ''}
+      </div>
+      <p class="mt-2 text-sm font-medium truncate">${b.title}</p>
+      <p class="text-xs opacity-50 truncate">${b.author||'Desconhecido'}</p>
+    </div>`).join('');
+
+  grid.querySelectorAll('.book-card').forEach(el => {
+    el.addEventListener('click', () => {
+      const book = App.books.find(x => x.id === el.dataset.id);
+      if (book) openBook(book);
+    });
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   ABRIR LIVRO
+   ═══════════════════════════════════════════════════════ */
+async function openBook(book){
+  App.currentBook = book;
+  App.currentFormat = book.format;
+
+  document.getElementById('library-screen').classList.add('hidden');
+  document.getElementById('reader-screen').classList.remove('hidden');
+  document.getElementById('book-title').textContent = book.title;
+
+  const data = await Storage.readBook(book.id);
+  const progress = JSON.parse(localStorage.getItem('reader_progress')||'{}')[book.id] || {};
+
+  if (book.format === 'epub') {
+    document.getElementById('pdf-viewer').classList.add('hidden');
+    document.getElementById('epub-viewer').classList.remove('hidden');
+    App.reader = new EpubReader({
+      container: document.getElementById('epub-viewer'),
+      data, fontSize: App.fontSize,
+      onProgress: (pct, cfi) => saveProgress(book.id, pct, { cfi }),
+    });
+    await App.reader.open(progress.cfi);
+  } else {
+    document.getElementById('epub-viewer').classList.add('hidden');
+    document.getElementById('pdf-viewer').classList.remove('hidden');
+    App.reader = new PdfReader({
+      canvas: document.getElementById('pdf-viewer'),
+      data,
+      onProgress: (p, total) => saveProgress(book.id, p/total*100, { page: p }),
+    });
+    await App.reader.open(progress.page);
+  }
+}
+
+function saveProgress(bookId, percent, extra){
+  const prog = JSON.parse(localStorage.getItem('reader_progress')||'{}');
+  prog[bookId] = { percent: Math.round(percent), ...extra };
+  localStorage.setItem('reader_progress', JSON.stringify(prog));
+}
+
+/* ═══════════════════════════════════════════════════════
+   IMPORTAR
+   ═══════════════════════════════════════════════════════ */
+function importBook(){
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.epub,.pdf,application/epub+zip,application/pdf';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['epub','pdf'].includes(ext)) return alert('Formato não suportado.');
+    const id = `book_${Date.now()}`;
+    try {
+      await Storage.saveBook(id, file);
+      await loadLibrary();
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao importar: ' + e.message);
+    }
+  };
+  input.click();
+}
+
+/* ═══════════════════════════════════════════════════════
+   INDICADORES
+   ═══════════════════════════════════════════════════════ */
+async function updateStorageIndicator(){
+  const info = await Storage.getStorageInfo();
+  document.getElementById('storage-indicator').textContent = `Armazenamento: ${info.used}`;
+  document.getElementById('wifi-indicator').textContent =
+    navigator.onLine ? 'Wi-Fi: ligado' : 'Wi-Fi: desligado';
+}
+
+/* ═══════════════════════════════════════════════════════
+   EVENTOS
+   ═══════════════════════════════════════════════════════ */
+function bindEvents(){
+  document.getElementById('btn-night-toggle').onclick = () => NightMode.toggle();
+  document.getElementById('btn-import').onclick = importBook;
+
+  document.getElementById('btn-sync').onclick = () => {
+    alert('Sincronização com Google Drive/Dropbox será configurada depois.\n\n' +
+          'As anotações são guardadas localmente e podem ser exportadas via Wi-Fi agora.');
+  };
+
+  document.getElementById('btn-back').onclick = () => {
+    App.reader?.destroy(); App.reader = null; App.currentBook = null;
+    document.getElementById('reader-screen').classList.add('hidden');
+    document.getElementById('library-screen').classList.remove('hidden');
+    loadLibrary();
+  };
+
+  document.getElementById('btn-font-increase').onclick = () => {
+    App.fontSize = Math.min(200, App.fontSize + 10);
+    App.reader?.setFontSize?.(App.fontSize);
+  };
+  document.getElementById('btn-font-decrease').onclick = () => {
+    App.fontSize = Math.max(60, App.fontSize - 10);
+    App.reader?.setFontSize?.(App.fontSize);
+  };
+
+  document.getElementById('btn-annotations').onclick = () => {
+    if (App.currentBook) Annotations.render(App.currentBook.id);
+    document.getElementById('annotations-panel').classList.remove('translate-x-full');
+  };
+  document.getElementById('btn-close-annotations').onclick = () => {
+    document.getElementById('annotations-panel').classList.add('translate-x-full');
+  };
+  document.getElementById('btn-export-wifi').onclick = () => Annotations.exportViaWifi();
+
+  // Toque no leitor → mostrar toolbar por 4s
+  const readerScreen = document.getElementById('reader-screen');
+  let toolbarTimer;
+  readerScreen.addEventListener('click', (e) => {
+    if (e.target.closest('#reader-toolbar')) return;
+    const tb = document.getElementById('reader-toolbar');
+    tb.classList.toggle('opacity-0');
+    clearTimeout(toolbarTimer);
+    if (!tb.classList.contains('opacity-0')) {
+      toolbarTimer = setTimeout(() => tb.classList.add('opacity-0'), 4000);
+    }
+  });
+
+  window.addEventListener('online', updateStorageIndicator);
+  window.addEventListener('offline', updateStorageIndicator);
+}
+
+/* ═══════════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════════ */
+(async () => {
+  try {
+    await Storage.init();
+    NightMode.init();
+    Annotations.init();
+    bindEvents();
+    await loadLibrary();
+  } catch (e) {
+    console.error('Boot error:', e);
+    document.body.innerHTML = `<pre style="padding:20px;color:red">Erro: ${e.message}\n${e.stack}</pre>`;
+  }
+})();
+</script>
 </body>
 </html>
